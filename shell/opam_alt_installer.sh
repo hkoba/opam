@@ -5,6 +5,8 @@ set -ue
 # (c) Copyright Fabrice Le Fessant INRIA/OCamlPro 2013
 # (c) Copyright Louis Gesbert OCamlPro 2014-2015
 
+# Minor enhancement by hkoba.
+
 VERSION='1.2.2'
 
 default_ocaml=4.02.1
@@ -13,7 +15,7 @@ usage() {
 cat <<EOF
 
 Usage:
-    ./opam_install BINDIR [COMP]
+    ./opam_alt_install BINDIR [COMP] [--root OPAMROOT]
 
     Download and installs the latest binary version of OPAM
 
@@ -23,6 +25,8 @@ Usage:
     COMP is an optional argument, specifying the initial version of OCaml you
     want to use ($default_ocaml by default. You may use 'system' if you want to
     use an ocaml compiler already present on your system).
+
+    Other "opam init" options such as "--root" can also be given after COMP.
 EOF
     exit 1
 }
@@ -56,35 +60,31 @@ getopam() {
     fi
 }
 
-if [ $# -lt 1 ] || [ $# -gt 2 ] || [ "${1#-}" != "$1" ]; then
-    echo "OPAM binary installer v. $VERSION"
+if [ $# -lt 1 ] ; then
+    echo "Alternative OPAM binary installer for opam v. $VERSION"
     usage
 fi
 
-BINDIR=$1
-COMP=${2:-$default_ocaml}
+BINDIR=$1; shift
+if [ $# -lt 1 ]; then
+    COMP=$default_ocaml
+else
+    COMP=$1
+    shift
+fi
 
 file="opam-$VERSION-$(uname -m || echo unknown)-$(uname -s || echo unknown)"
 
 echo Downloading OPAM...
 getopam "https://github.com/ocaml/opam/releases/download/$VERSION" $file
 
+TMP_OPAM=$TMP/$file
+chmod a+x $TMP_OPAM
+
 mkdir -p "$BINDIR" 2>/dev/null || true
 if [ ! -w "$BINDIR" ]; then
     echo "You don't have write access to $BINDIR: sudo may ask for your password"
     if [ ! -d "$BINDIR" ]; then sudo mkdir -p "$BINDIR"; fi
-    sudo install -g root -o root -m 755 $TMP/$file $BINDIR/opam
-else
-    install -m 755 $TMP/$file $BINDIR/opam
-fi
-rm -f $TMP/$file
-
-OPAM=$(which opam || echo "$BINDIR/opam")
-if [ "$OPAM" != "$BINDIR/opam" ]; then
-    echo "WARNING: you have a different version of OPAM installed at $OPAM"
-    echo "It is highly recommended that you remove it."
-    read -p "[press enter to continue]" x
-    OPAM="$BINDIR/opam"
 fi
 
 if [ "$(id -u)" = "0" ]; then
@@ -92,7 +92,22 @@ if [ "$(id -u)" = "0" ]; then
     echo "You'll want to run \"$OPAM init --comp $COMP\" as user"
 else
     echo "Initializing with compiler $COMP"
-    "$OPAM" init --comp "$COMP"
+    LANG=C "$TMP_OPAM" init --comp "$COMP" "$@"
+fi
+
+if [ ! -w "$BINDIR" ]; then
+    sudo install -g root -o root -m 755 $TMP_OPAM $BINDIR/opam
+else
+    install -m 755 $TMP_OPAM $BINDIR/opam
+fi
+rm -f $TMP_OPAM
+
+OPAM=$(which opam || echo "$BINDIR/opam")
+if [ "$OPAM" != "$BINDIR/opam" ]; then
+    echo "WARNING: you have a different version of OPAM installed at $OPAM"
+    echo "It is highly recommended that you remove it."
+    read -p "[press enter to continue]" x
+    OPAM="$BINDIR/opam"
 fi
 
 echo "Installation done. If you need to uninstall, simply remove $BINDIR/opam"
